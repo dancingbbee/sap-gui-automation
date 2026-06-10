@@ -159,16 +159,22 @@ function snapshot(comp, depth, maxDepth) {
 // (verified) — the window does NOT come to front, so the user's other work is
 // undisturbed. paintAll renders the component tree regardless of occlusion.
 var ENLARGE_W = 1600, ENLARGE_H = 1000;
+var ENLARGE_RELAYOUT_MS = 600;     // SAP relayouts its working pane async on resize
+var ENLARGE_OFFSCREEN_X = 30000;   // move off-screen during enlarge so it's invisible
 
 function screenshot(path, match, enlarge) {
   var Frame         = java.awt.Frame;
   var BufferedImage = java.awt.image.BufferedImage;
   var ImageIO       = javax.imageio.ImageIO;
 
-  return runOnEDT(function() {
+  var target = null, origBounds = null;
+
+  // step 1 (EDT): locate the frame; if small, move it OFF-SCREEN and enlarge.
+  // Doing the resize off-screen means the user never sees the window grow/shrink
+  // (the earlier in-place resize was visible behind other windows). setBounds
+  // does NOT change z-order/focus, so the window does not come to front.
+  runOnEDT(function() {
     var frames = Frame.getFrames();
-    var target = null;
-    // prefer a frame whose title matches; else the largest visible SAPFrame
     for (var i = 0; i < frames.length; i++) {
       var f = frames[i];
       if (!f.isShowing()) continue;
@@ -180,31 +186,35 @@ function screenshot(path, match, enlarge) {
       }
     }
     if (target == null) throw new java.lang.RuntimeException("no matching SAP frame (match=" + match + ")");
-
-    // enlarge-in-place for a hi-res capture, restore afterward
-    var origBounds = null;
     if (enlarge !== false && (target.getWidth() < ENLARGE_W || target.getHeight() < ENLARGE_H)) {
-      try {
-        origBounds = target.getBounds();
-        target.setSize(Math.max(ENLARGE_W, target.getWidth()), Math.max(ENLARGE_H, target.getHeight()));
-        target.validate();
-      } catch (e) { origBounds = null; }
-    }
-    try {
-      var w = target.getWidth(), h = target.getHeight();
-      var img = new BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB);
-      var g = img.createGraphics();
-      target.paintAll(g);
-      g.dispose();
-      new File(CACHE_DIR).mkdirs();
-      ImageIO.write(img, "png", new File(path));
-      return { ok: true, path: path, w: w, h: h, title: String(target.getTitle()), enlarged: (origBounds != null) };
-    } finally {
-      if (origBounds != null) {
-        try { target.setBounds(origBounds); target.validate(); } catch (e) {}
-      }
+      origBounds = target.getBounds();
+      var ew = Math.max(ENLARGE_W, target.getWidth()), eh = Math.max(ENLARGE_H, target.getHeight());
+      target.setBounds(ENLARGE_OFFSCREEN_X, origBounds.y, ew, eh);  // off-screen + enlarged, atomic
+      target.validate();
     }
   });
+
+  // step 2: let SAP process the resize (relayout the working pane) before
+  // painting — otherwise the content stays small inside a large canvas.
+  if (origBounds != null) { try { Thread.sleep(ENLARGE_RELAYOUT_MS); } catch (e) {} }
+
+  // step 3 (EDT): paint the (now enlarged) component tree to PNG.
+  var result = runOnEDT(function() {
+    var w = target.getWidth(), h = target.getHeight();
+    var img = new BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB);
+    var g = img.createGraphics();
+    target.paintAll(g);
+    g.dispose();
+    new File(CACHE_DIR).mkdirs();
+    ImageIO.write(img, "png", new File(path));
+    return { ok: true, path: path, w: w, h: h, title: String(target.getTitle()), enlarged: (origBounds != null) };
+  });
+
+  // step 4 (EDT): restore original size.
+  if (origBounds != null) {
+    runOnEDT(function() { try { target.setBounds(origBounds); target.validate(); } catch (e) {} });
+  }
+  return result;
 }
 
 // ---- transact: declarative multi-step driver ----
