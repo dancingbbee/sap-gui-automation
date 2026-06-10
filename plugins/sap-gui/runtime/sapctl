@@ -1,59 +1,25 @@
 #!/usr/bin/env python3
-"""sapctl — CLI client for the SAP GUI daemon (sap-daemon.js).
+"""sapctl — cross-platform CLI client for SAP GUI control.
 
-The daemon listens on 127.0.0.1:18765 inside a running SAP GUI for Java
-process. Every request (except health) carries the token from
-~/.sap-daemon/token.
+Selects a backend by OS (macOS = sap-daemon.js over HTTP; Windows = win32com COM)
+and exposes one interface: health/status/start/kill-orphans/targets/exec/
+snapshot/screenshot/transact. The transact step JSON is the OS-neutral way to
+drive SAP; `exec` (raw JS) is macOS-only.
 
 Examples:
     sapctl health
-    sapctl exec 'application.findById("/app/con[0]/ses[0]").info.getUser()'
-    sapctl snapshot --id '/app/con[0]/ses[0]/wnd[0]/usr' --depth 3
+    sapctl targets
+    sapctl snapshot --id 'wnd[0]/usr' --depth 3
     sapctl screenshot --match 100-100 -o /tmp/mat.png
     sapctl transact steps.json        # steps.json = {"steps":[...]} or [...]
 """
 import argparse
 import json
 import os
-import subprocess
 import sys
-import time
-import urllib.request
-import urllib.error
 
-HOST = os.environ.get("SAP_DAEMON_HOST", "127.0.0.1")
-PORT = int(os.environ.get("SAP_DAEMON_PORT", "18765"))
-TOKEN_PATH = os.path.expanduser("~/.sap-daemon/token")
-LAUNCHER = os.path.expanduser("~/Applications/SAP (daemon).app")
-
-
-def token():
-    try:
-        with open(TOKEN_PATH) as f:
-            return f.read().strip()
-    except FileNotFoundError:
-        return None
-
-
-def call(method, path, body=None, timeout=30):
-    url = f"http://{HOST}:{PORT}{path}"
-    data = json.dumps(body).encode() if body is not None else None
-    req = urllib.request.Request(url, data=data, method=method)
-    req.add_header("Content-Type", "application/json")
-    tok = token()
-    if tok:
-        req.add_header("X-Token", tok)
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as r:
-            return json.loads(r.read().decode())
-    except urllib.error.HTTPError as e:
-        try:
-            return json.loads(e.read().decode())
-        except Exception:
-            return {"ok": False, "error": f"HTTP {e.code}"}
-    except urllib.error.URLError as e:
-        return {"ok": False, "error": f"connect failed: {e.reason} "
-                                      f"(is SAP GUI running with sap-daemon.js?)"}
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from backends import select_backend
 
 
 def emit(obj, raw=False):
@@ -62,103 +28,6 @@ def emit(obj, raw=False):
     else:
         print(json.dumps(obj, ensure_ascii=False, indent=2))
     return 0 if obj.get("ok") else 1
-
-
-# ---- lifecycle (local process management; separate from the HTTP layer) ----
-# The daemon lives INSIDE the SAP GUI JVM. It has no independent lifecycle:
-# starting it = launching SAP GUI with -f; stopping it = killing that JVM
-# (which also closes the user's logged-in sessions).
-
-def daemon_pid():
-    """PID of the SAP GUI JVM holding port 18765, or None."""
-    try:
-        out = subprocess.run(["lsof", "-nP", "-iTCP:%d" % PORT, "-sTCP:LISTEN", "-t"],
-                             capture_output=True, text=True, timeout=10).stdout.strip()
-        return int(out.splitlines()[0]) if out else None
-    except Exception:
-        return None
-
-
-def cmd_status(timeout):
-    pid = daemon_pid()
-    if pid is None:
-        return {"ok": False, "running": False,
-                "error": "daemon not running (no listener on %d). Use 'sapctl start'." % PORT}
-    h = call("GET", "/health", timeout=timeout)
-    h["running"] = True
-    h["pid"] = pid
-    if h.get("conns", 0) == 0:
-        h["hint"] = "daemon up but no SAP login. Double-click a system in the Logon Pad."
-    return h
-
-
-def cmd_start(timeout):
-    if daemon_pid() is not None:
-        return {"ok": True, "running": True, "note": "already running",
-                "status": call("GET", "/health", timeout=timeout)}
-    if not os.path.exists(LAUNCHER):
-        return {"ok": False, "error": "launcher not found at %s — run install.sh first" % LAUNCHER}
-    subprocess.run(["open", LAUNCHER], check=False)
-    # wait for the port to come up
-    for _ in range(20):
-        time.sleep(0.5)
-        if daemon_pid() is not None:
-            return {"ok": True, "running": True,
-                    "note": "started; now log in via the Logon Pad",
-                    "status": call("GET", "/health", timeout=timeout)}
-    return {"ok": False, "error": "launched but daemon did not bind within 10s"}
-
-
-def list_sap_pids():
-    """PIDs of all running SAP GUI for Java processes."""
-    try:
-        out = subprocess.run(["pgrep", "-f", "SAPGUI 8.10"],
-                             capture_output=True, text=True, timeout=10).stdout
-        me = os.getpid()
-        return [int(p) for p in out.split() if p.strip().isdigit() and int(p) != me]
-    except Exception:
-        return []
-
-
-def _window_count(pid):
-    """Number of AX windows for a process; -1 if it can't be determined."""
-    script = ('tell application "System Events" to count windows of '
-              '(first application process whose unix id is %d)' % pid)
-    try:
-        r = subprocess.run(["osascript", "-e", script],
-                           capture_output=True, text=True, timeout=10)
-        return int(r.stdout.strip())
-    except Exception:
-        return -1
-
-
-def cmd_kill_orphans(dry_run):
-    """Kill SAP GUI processes that hold no daemon port AND have no windows
-    (leftover JVMs with no login session). The daemon and any window-bearing
-    SAP instance are preserved."""
-    daemon = daemon_pid()
-    result = {"ok": True, "daemon_pid": daemon, "checked": [], "orphans": [], "killed": []}
-    for pid in list_sap_pids():
-        if pid == daemon:
-            result["checked"].append({"pid": pid, "role": "daemon", "action": "keep"})
-            continue
-        wc = _window_count(pid)
-        if wc == 0:
-            result["orphans"].append(pid)
-            if dry_run:
-                result["checked"].append({"pid": pid, "windows": 0, "action": "would-kill"})
-            else:
-                subprocess.run(["kill", str(pid)], check=False)
-                result["killed"].append(pid)
-                result["checked"].append({"pid": pid, "windows": 0, "action": "killed"})
-        else:
-            result["checked"].append({"pid": pid, "windows": wc,
-                                       "action": "keep (has windows or unknown)"})
-    return result
-
-# Note: there is no stop/restart. The daemon is bound to the SAP GUI JVM's
-# lifetime — quit SAP GUI (Cmd+Q) and the daemon dies with it. Managing it
-# separately would only risk closing the user's logged-in sessions.
 
 
 def add_target_flags(sp):
@@ -175,28 +44,26 @@ def target_body(args):
         v = getattr(args, k, None)
         if v is not None:
             body[k] = v
-    # 'match' is shared: for screenshot it's the capture target; for others it
-    # selects the (con,ses). Callers merge it where appropriate.
     return body
 
 
 def main():
-    p = argparse.ArgumentParser(prog="sapctl", description="SAP GUI daemon client")
+    p = argparse.ArgumentParser(prog="sapctl", description="SAP GUI control client (macOS/Windows)")
     p.add_argument("--raw", action="store_true", help="compact JSON output")
     p.add_argument("--timeout", type=int, default=30)
     sub = p.add_subparsers(dest="cmd", required=True)
 
-    sub.add_parser("health", help="ping daemon (low-level)")
+    sub.add_parser("health", help="ping daemon / check COM attach")
     sub.add_parser("targets", help="list open connections × sessions (pick one to control)")
 
-    # lifecycle (daemon is bound to SAP GUI; quit SAP to stop it — no stop/restart)
-    sub.add_parser("status", help="is the daemon running + logged in?")
-    sub.add_parser("start", help="launch SAP GUI with the daemon attached")
+    # lifecycle
+    sub.add_parser("status", help="is SAP control available + logged in?")
+    sub.add_parser("start", help="launch SAP (macOS: daemon app; Windows: guidance)")
     pko = sub.add_parser("kill-orphans",
-                         help="kill leftover SAP processes with no windows (not the daemon)")
+                         help="kill leftover SAP processes with no windows (macOS only)")
     pko.add_argument("--dry-run", action="store_true", help="list what would be killed, don't kill")
 
-    pe = sub.add_parser("exec", help="evaluate a JS snippet in the daemon")
+    pe = sub.add_parser("exec", help="evaluate a JS snippet (macOS only)")
     pe.add_argument("script")
     pe.add_argument("--edt", action="store_true", help="run on Swing EDT (rarely needed)")
     add_target_flags(pe)
@@ -207,36 +74,37 @@ def main():
     add_target_flags(ps)
 
     pc = sub.add_parser("screenshot", help="capture a SAP window to PNG")
-    pc.add_argument("-o", "--out", default=None, help="output path (default: daemon cache dir)")
+    pc.add_argument("-o", "--out", default=None, help="output path")
     pc.add_argument("--match", default=None, help="window-title substring to capture")
     pc.add_argument("--con", type=int, default=None, help="connection index")
     pc.add_argument("--ses", type=int, default=None, help="session index")
     pc.add_argument("--system", default=None, help="capture target by system name")
     pc.add_argument("--no-enlarge", action="store_true",
-                    help="capture at current window size (default: enlarge small windows for legibility)")
+                    help="capture at current size (macOS: skip off-screen enlarge)")
 
     pt = sub.add_parser("transact", help="run a declarative step list from a JSON file ('-' = stdin)")
     pt.add_argument("file")
     add_target_flags(pt)
 
     args = p.parse_args()
+    be = select_backend()
 
     if args.cmd == "health":
-        return emit(call("GET", "/health", timeout=args.timeout), args.raw)
+        return emit(be.health(args.timeout), args.raw)
     if args.cmd == "targets":
-        return emit(call("POST", "/targets", {}, timeout=args.timeout), args.raw)
+        return emit(be.targets(args.timeout), args.raw)
     if args.cmd == "status":
-        return emit(cmd_status(args.timeout), args.raw)
+        return emit(be.status(args.timeout), args.raw)
     if args.cmd == "start":
-        return emit(cmd_start(args.timeout), args.raw)
+        return emit(be.start(args.timeout), args.raw)
     if args.cmd == "kill-orphans":
-        return emit(cmd_kill_orphans(args.dry_run), args.raw)
+        return emit(be.kill_orphans(args.dry_run), args.raw)
     if args.cmd == "exec":
         body = target_body(args)
         body.update({"script": args.script, "edt": args.edt})
         if args.match is not None:
             body["match"] = args.match
-        return emit(call("POST", "/exec", body, timeout=args.timeout), args.raw)
+        return emit(be.exec_(body, args.timeout), args.raw)
     if args.cmd == "snapshot":
         body = target_body(args)
         body["maxDepth"] = args.depth
@@ -244,7 +112,7 @@ def main():
             body["id"] = args.id
         if args.match is not None:
             body["match"] = args.match
-        return emit(call("POST", "/snapshot", body, timeout=args.timeout), args.raw)
+        return emit(be.snapshot(body, args.timeout), args.raw)
     if args.cmd == "screenshot":
         body = {}
         if args.out:
@@ -255,7 +123,7 @@ def main():
                 body[k] = v
         if args.no_enlarge:
             body["enlarge"] = False
-        return emit(call("POST", "/screenshot", body, timeout=args.timeout), args.raw)
+        return emit(be.screenshot(body, args.timeout), args.raw)
     if args.cmd == "transact":
         text = sys.stdin.read() if args.file == "-" else open(args.file).read()
         parsed = json.loads(text)
@@ -264,7 +132,7 @@ def main():
         body["steps"] = steps
         if args.match is not None:
             body["match"] = args.match
-        return emit(call("POST", "/transact", body, timeout=args.timeout), args.raw)
+        return emit(be.transact(body, args.timeout), args.raw)
     return 2
 
 
