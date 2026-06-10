@@ -86,6 +86,9 @@ def main():
     pc.add_argument("--con", type=int, default=None, help="connection index")
     pc.add_argument("--ses", type=int, default=None, help="session index")
     pc.add_argument("--system", default=None, help="capture target by system name")
+    pc.add_argument("--wnd", type=int, default=None,
+                    help="window index to capture (default: topmost — captures modal popups). "
+                         "Windows only; macOS captures the main window.")
     pc.add_argument("--no-enlarge", action="store_true",
                     help="capture at current size (macOS: skip off-screen enlarge)")
 
@@ -124,7 +127,7 @@ def main():
         body = {}
         if args.out:
             body["path"] = os.path.abspath(args.out)
-        for k in ("match", "con", "ses", "system"):
+        for k in ("match", "con", "ses", "system", "wnd"):
             v = getattr(args, k, None)
             if v is not None:
                 body[k] = v

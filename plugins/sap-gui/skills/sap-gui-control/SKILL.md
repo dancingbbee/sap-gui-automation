@@ -62,7 +62,7 @@ sapctl screenshot --system QAS -o /tmp/qas.png   # 시스템명
 - **T-code 열기**: `echo '{"steps":[{"tcode":"MM03"}]}' | sapctl transact -`
 - **자재/문서 조회 + 캡처**: transact 로 navigate → 필드 set → vkey → screenshot (playbook §3 예시)
 - **값 읽기**: 필드 ID 알면 `{"read":"wnd[0]/usr/ctxtX"}`. 모르면 **screenshot 후 이미지 판독이 더 빠름** (Z-custom 트리 walk 는 느리거나 hang).
-- **화면 캡처**: `sapctl screenshot --match "<창제목 일부>" -o <path>` — occlusion 무관. PNG 를 Read 로 보고 요약.
+- **화면 캡처**: `sapctl screenshot -o <path>` — 창을 앞으로 안 띄우고 캡처(occlusion·focus 무관, macOS=paintAll / Windows=PrintWindow). 기본은 최상위/활성 창(모달 우선). 특정 창은 `--wnd N`, 제목으로는 `--match "<창제목 일부>"`. PNG 를 Read 로 보고 요약.
 
 ## 4. 안전 규칙 (중요)
 

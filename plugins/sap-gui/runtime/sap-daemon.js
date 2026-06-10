@@ -239,9 +239,21 @@ function runStep(step, tgt) {
   var prefix = tgt.prefix;
   if (step.tcode != null) {
     var s = application.findById(prefix);
-    s.findById("wnd[0]/tbar[0]/okcd").setText("/n" + step.tcode);
-    s.findById("wnd[0]").sendVKey(0);
-    return { tcode: step.tcode, now: String(s.info.getTransaction()) };
+    var raw = String(step.tcode).replace(/^\s+|\s+$/g, "");
+    var tc = (raw.substring(0, 2).toLowerCase() === "/n" ? raw.substring(2) : raw).toUpperCase();
+    var go = function() {
+      s.findById("wnd[0]/tbar[0]/okcd").setText("/n" + tc);
+      s.findById("wnd[0]").sendVKey(0);
+    };
+    go();
+    var now = String(s.info.getTransaction());
+    if (now.toUpperCase() !== tc) {
+      // First tcode right after attach can silently no-op (BUG-5); retry once.
+      try { Thread.sleep(300); } catch (e) {}
+      go();
+      now = String(s.info.getTransaction());
+    }
+    return { tcode: tc, now: now, ok: (now.toUpperCase() === tc) };
   }
   if (step.set != null) {
     var f = application.findById(abs(step.set, prefix));
@@ -290,13 +302,18 @@ function runStep(step, tgt) {
   }
   if (step.screenshot != null) {
     var p = step.path || (CACHE_DIR + "/transact-" + java.lang.System.nanoTime() + ".png");
-    // screenshot matches by window title; default to the target's active window title
+    // screenshot matches by window title; default to the target's active window
+    // title. step.wnd pins a specific window index (e.g. modal popup wnd[1]).
     var m = step.match;
     if (m == null) {
-      var tlist = listTargets();
-      for (var k = 0; k < tlist.length; k++) {
-        if (tlist[k].con === tgt.con && tlist[k].ses === tgt.ses && tlist[k].windows.length > 0) {
-          m = tlist[k].windows[tlist[k].windows.length - 1]; break;
+      if (step.wnd != null) {
+        try { m = String(application.findById(prefix + "/wnd[" + step.wnd + "]").getText()); } catch (e) {}
+      } else {
+        var tlist = listTargets();
+        for (var k = 0; k < tlist.length; k++) {
+          if (tlist[k].con === tgt.con && tlist[k].ses === tgt.ses && tlist[k].windows.length > 0) {
+            m = tlist[k].windows[tlist[k].windows.length - 1]; break;
+          }
         }
       }
     }
@@ -409,13 +426,19 @@ function handle(sock) {
       try {
         var p = bodyJson.path || (CACHE_DIR + "/shot-" + java.lang.System.nanoTime() + ".png");
         var m = bodyJson.match;
-        // if no explicit match, derive from target's active window title
-        if (m == null && (bodyJson.con != null || bodyJson.ses != null || bodyJson.system != null)) {
+        // No explicit title → target the resolved (or default) session's window.
+        // wnd given → that window index; otherwise the active/topmost window, so
+        // modal popups (wnd[1]+) are captured instead of the main window beneath.
+        if (m == null) {
           var tgt3 = resolveTarget(bodyJson);
-          var tl = listTargets();
-          for (var z = 0; z < tl.length; z++) {
-            if (tl[z].con === tgt3.con && tl[z].ses === tgt3.ses && tl[z].windows.length > 0) {
-              m = tl[z].windows[tl[z].windows.length - 1]; break;
+          if (bodyJson.wnd != null) {
+            try { m = String(application.findById(tgt3.prefix + "/wnd[" + bodyJson.wnd + "]").getText()); } catch (e0) {}
+          } else {
+            var tl = listTargets();
+            for (var z = 0; z < tl.length; z++) {
+              if (tl[z].con === tgt3.con && tl[z].ses === tgt3.ses && tl[z].windows.length > 0) {
+                m = tl[z].windows[tl[z].windows.length - 1]; break;
+              }
             }
           }
         }
@@ -425,16 +448,26 @@ function handle(sock) {
       }
 
     } else if (method === "POST" && path === "/transact") {
+      var results = [];
       try {
         var tgt4 = resolveTarget(bodyJson);
         var steps = bodyJson.steps || [];
-        var results = [];
         for (var i = 0; i < steps.length; i++) {
-          results.push(runStep(steps[i], tgt4));
+          try {
+            results.push(runStep(steps[i], tgt4));
+          } catch (se) {
+            // Stop the batch on first failure (don't act on a wrong screen);
+            // return the results gathered so far + which step failed.
+            results.push({ error: String(se), step: steps[i] });
+            sendJSON(pw, 200, "OK", { ok: false, target: { con: tgt4.con, ses: tgt4.ses },
+                                      results: results, error: "step failed: " + String(se) });
+            sock.close();
+            return;
+          }
         }
         sendJSON(pw, 200, "OK", { ok: true, target: { con: tgt4.con, ses: tgt4.ses }, results: results });
       } catch (e) {
-        sendJSON(pw, 500, "Error", { ok: false, error: String(e), partial: true });
+        sendJSON(pw, 500, "Error", { ok: false, error: String(e), results: results, partial: true });
       }
 
     } else {

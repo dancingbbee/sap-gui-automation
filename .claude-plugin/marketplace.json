@@ -1,6 +1,6 @@
 {
   "name": "sap-gui-tools",
-  "description": "SAP GUI for Java (macOS) automation — Claude Code plugin marketplace",
+  "description": "SAP GUI automation (macOS + Windows) — Claude Code plugin marketplace",
   "owner": {
     "name": "dancingbbee"
   },
@@ -8,8 +8,8 @@
     {
       "name": "sap-gui",
       "source": "./plugins/sap-gui",
-      "description": "SAP GUI for Java (macOS) 자연어 백그라운드 자동제어 — 창 조회, 트랜잭션 navigate, 화면 판독, 스크린샷. 멀티타겟 지원.",
-      "version": "2.0.3",
+      "description": "SAP GUI 자연어 백그라운드 자동제어 (macOS/Windows) — 창 조회, 트랜잭션 navigate, 화면 판독, 앞으로 안 띄우는 스크린샷(모달 포함). 멀티타겟 지원.",
+      "version": "2.1.0",
       "author": {
         "name": "dancingbbee"
       }

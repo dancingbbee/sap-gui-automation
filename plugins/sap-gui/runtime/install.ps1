@@ -1,10 +1,16 @@
-# install.ps1 — Windows setup for sap-gui
+﻿# install.ps1 — Windows setup for sap-gui
 # Windows uses COM (win32com) directly: no daemon/token/launcher to install.
 # This script: finds a REAL Python (avoiding the Microsoft Store alias),
 # auto-installs pywin32, and guides on the one thing it can't safely automate
 # (enabling SAP GUI scripting — a security toggle that needs the user/admin).
 
 $ErrorActionPreference = "Continue"
+
+# Emit UTF-8 so the Korean status messages below aren't mangled by the console
+# code page (CP949). The file itself is saved UTF-8-with-BOM so Windows
+# PowerShell 5.1 parses the Korean string literals correctly too.
+try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch {}
+
 Write-Host "== sap-gui (Windows) setup ==" -ForegroundColor Green
 
 # 1) Find a real Python interpreter.
