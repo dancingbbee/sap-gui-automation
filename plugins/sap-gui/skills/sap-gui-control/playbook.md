@@ -168,6 +168,17 @@ echo '{"steps":[{"read":"wnd[0]/sbar"}]}' | sapctl transact -   # → "E:자재 
 
 > 이 플러그인 자체는 검증 플로우를 번들하지 않는다(각 환경이 다름). 위는 "있으면 참조하라"는 discovery 안내일 뿐이다.
 
+## 3.7 리포트(선택화면 → 결과) 실행 — 조회조건 바운딩 + ALV 판독
+
+리포트형 T-code(보통 Z*리포트, `*03` 조회)는 선택화면에서 조건을 받고 **F8**(`{"vkey":8}`)로 결과를 낸다. 핵심 주의 3가지:
+
+1. **조회조건을 반드시 바운딩한다 — 특히 회사코드/플랜트**. 조건 없이(또는 너무 넓게) F8 하면 전체 스캔이 되어 수 분씩 걸리고 결과 ALV 도 거대해진다. **회사코드(BUKRS)·플랜트(WERKS)는 거의 모든 조직 단위 리포트의 1차 필터**이니 **무조건 채워서 행수를 좁힌다.** 추가로 날짜/문서번호 범위 등으로 더 좁힐 수 있으면 좁힌다.
+   - 구체 코드값(회사코드/플랜트 번호 등)은 **환경마다 다르다** — 각자 환경의 로컬 KB/skill 에 default 가 있으면 그걸 쓰고, 없으면 사용자에게 묻는다. (이 public plugin 은 회사 코드값을 담지 않는다.)
+2. **무거운 쿼리는 타임아웃을 늘린다**. 기본 HTTP 타임아웃은 30초라 큰 리포트 F8 은 초과할 수 있다 → `sapctl --timeout 180 transact ...`. **클라이언트가 타임아웃나도 쿼리는 서버에서 계속 실행**되며, con 이 풀리면 다음 호출이 즉시 응답한다(긴 `--timeout` 단일 호출로 완료를 기다리는 게 효율적). 빠져나올 땐 okcd `/n` 으로 한 번에 Easy Access 복귀.
+3. **ALV 결과 read 는 OS 차이가 있다**:
+   - **macOS(SAP GUI for Java)**: ALV `GuiGridView` 가 scripting 트리에 **노출되지 않는다** (`wnd[0]/usr` 자식 0개) → `snapshot`/`read` 로 셀을 못 읽는다. **screenshot 이미지 판독이 유일·정답**. (실측: ZMMR류 리포트 결과 그리드)
+   - **Windows(COM)**: `GuiGridView` 가 노출돼 셀 직접 read 가 보통 가능(`GetCellValue`). 그래도 행수 많으면 screenshot 이 빠를 때가 많다.
+
 ## 4. 자주 쓰는 vkey
 
 | vkey | 의미 |
@@ -198,6 +209,8 @@ sapctl exec 'var s=application.findById("/app/con[0]/ses[0]"); "wnd1=" + (s.find
 | exec 가 timeout | EDT 에 SAP API 호출 wrap 함. `--edt` 빼기 (기본 OFF 가 정답) |
 | `findById` null | 화면이 예상과 다름. 먼저 snapshot 으로 실제 트리 확인 |
 | getChildren hang | Z-custom container lazy-load. 트리 walk 포기, screenshot 으로 |
+| 리포트 F8 이 timeout / 응답 없음 | 조회조건 너무 넓어 전체 스캔. ① 회사코드·플랜트 등으로 좁히고 ② `--timeout 180`. 쿼리는 서버에서 계속 도니 긴 timeout 단일 호출로 완료 대기. 빠져나올 땐 okcd `/n`. (§3.7) |
+| ALV 결과 셀이 `snapshot`/`read` 로 안 잡힘 (macOS) | SAP GUI for Java 가 `GuiGridView` 를 트리에 노출 안 함(`usr` 자식 0). **screenshot 이미지 판독** 사용. Windows COM 은 GuiGridView 셀 read 가능. (§3.7) |
 | 스크린샷이 엉뚱한 창 | 기본은 타겟 세션의 **최상위/활성 창**(모달 우선). 특정 창은 `--wnd N`(0=메인, 1=첫 모달), 또는 `--match` 로 창 제목 substring. |
 | 모달 popup 이 안 잡히고 뒤 메인화면만 캡처됨 | 기본이 최상위 창이라 보통 자동으로 모달이 잡힘. 명시하려면 `--wnd 1`. (Windows=PrintWindow 로 모달 hwnd 직접 / macOS=`Window.getWindows()` 로 `SAPDialog` 모달까지 paintAll — `Frame.getFrames()` 는 Dialog 를 못 봄) |
 | 모달 캡처가 큰 여백으로 채워짐 | 구버전(2.1.0)에서 enlarge 가 고정 레이아웃 모달까지 키워 발생(이슈 #2). **2.1.1+ 에서 모달은 확대 스킵** — native 크기로 선명하게 캡처. |
