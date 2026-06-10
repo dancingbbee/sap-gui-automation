@@ -1,6 +1,8 @@
 # SAP GUI daemon — Claude playbook
 
-자연어 명령을 SAP GUI 조작으로 옮길 때 참조하는 cheatsheet. daemon (`sap-daemon.js`) 이 SAP GUI for Java 안에서 HTTP `127.0.0.1:18765` 로 listen 중이고, `sapctl` (Python CLI) 또는 직접 curl 로 호출한다.
+자연어 명령을 SAP GUI 조작으로 옮길 때 참조하는 cheatsheet. `sapctl` (Python CLI) 로 호출한다.
+
+> **멀티OS**: `sapctl` 은 OS 자동 감지 — macOS=`sap-daemon.js` (HTTP `127.0.0.1:18765`), Windows=`win32com` COM 직접. **`transact` step JSON 이 OS 공통 인터페이스이니 step 으로 작성하는 걸 우선**한다. **`exec`(임의 JS)는 macOS 전용** escape hatch (Windows 는 "미지원" 에러 → step 으로 대체). 체크박스/라디오는 `{"select":"<id>","value":true}`, 상태바는 `{"read":"wnd[0]/sbar"}` step 으로 — exec 없이 양 OS 에서 동작.
 
 ## 0. 전제 / 안전
 
@@ -15,7 +17,10 @@
 # 헬스
 sapctl health
 
-# 임의 JS 평가 (가장 범용 — escape hatch)
+# 선언적 step (OS 공통 — 우선 사용)
+echo '{"steps":[{"tcode":"MM03"},{"set":"wnd[0]/usr/ctxtRMMG1-MATNR","to":"X"},{"vkey":0}]}' | sapctl transact -
+
+# 임의 JS 평가 (macOS 전용 escape hatch — Windows 미지원)
 sapctl exec 'application.findById("/app/con[0]/ses[0]").info.getUser()'
 
 # UI 트리 덤프
@@ -126,12 +131,13 @@ sapctl snapshot --id 'wnd[0]/usr' --depth 4
 - `GuiCTextField`/`GuiTextField` 중 `text` 가 비어있는 것 = **채워야 할 입력 필드** (보통 화면 키값: 자재/오더/회사코드/날짜 등)
 - `GuiButton`/`GuiTab` = 누를 수 있는 것
 
-**2) status bar 읽기** — SAP 가 "뭐가 필요한지" 말해준다 (`sess` = exec 스코프에 주입된 세션 객체):
+**2) status bar 읽기** — SAP 가 "뭐가 필요한지" 말해준다. **step 으로 (OS 공통, 권장)**:
 ```bash
-sapctl exec 'var sb=sess.findById("wnd[0]/sbar"); sb.getMessageType()+": "+sb.getText()'
-# 타겟 지정: sapctl exec --con 0 --ses 1 '...'
+echo '{"steps":[{"read":"wnd[0]/sbar"}]}' | sapctl transact -   # → "E:자재 X..." 형태(type:text)
+# 타겟: ... | sapctl transact - --con 0 --ses 1
 ```
-`E:`(Error)/`W:`(Warning) 메시지면 그 필드/조건이 빠진 것 — 메시지 내용이 곧 힌트. `getMessageType()` 이 빈 문자열이면 에러 없음(정상 진행 가능). `getMessageId()`+`getMessageNumber()` 로 정확한 메시지도 식별 가능.
+(macOS 한정 고급: `sapctl exec 'var sb=sess.findById("wnd[0]/sbar"); sb.getMessageType()+": "+sb.getText()'`)
+`E:`(Error)/`W:`(Warning) 메시지면 그 필드/조건이 빠진 것 — 메시지 내용이 곧 힌트. 빈 type 이면 에러 없음(정상 진행).
 
 **3) 실행 키 시도** (대부분 이 순서로 다음 화면 진입):
 - 입력 필드 채운 뒤 **Enter** (`{"vkey":0}`) — 조회/단순 진입
