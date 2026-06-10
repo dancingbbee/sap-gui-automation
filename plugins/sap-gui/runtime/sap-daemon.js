@@ -224,6 +224,7 @@ function screenshot(path, match, enlarge) {
 //   { vkey: 0, wnd: 0 }                            → window.sendVKey
 //   { tab: "wnd[0]/usr/tabsTABSPR1/tabpSP02" }     → tab.select
 //   { selectRows: "wnd[1]/usr/tblXXX", rows: [0] } → table row select (others off)
+//   { select: "wnd[0]/usr/chkX", value: true }     → checkbox/radio setSelected
 //   { press: "wnd[1]/tbar[0]/btn[0]" }             → button.press
 //   { read: "wnd[0]/usr/ctxtX" }                   → returns getText
 //   { sleep: 500 }                                 → Thread.sleep(ms)
@@ -267,9 +268,17 @@ function runStep(step, tgt) {
     application.findById(abs(step.press, prefix)).press();
     return { press: step.press };
   }
+  if (step.select != null) {                 // checkbox / radio toggle
+    var c = application.findById(abs(step.select, prefix));
+    c.setSelected(step.value !== false);      // value omitted → true
+    return { select: step.select, selected: (step.value !== false) };
+  }
   if (step.read != null) {
     var r = application.findById(abs(step.read, prefix));
-    return { read: step.read, value: String(r.getText()) };
+    var val = (step.read.indexOf("sbar") >= 0)
+      ? (String(r.getMessageType()) + ":" + String(r.getText()))   // status bar: type+text
+      : String(r.getText());
+    return { read: step.read, value: val };
   }
   if (step.sleep != null) {
     Thread.sleep(step.sleep);
