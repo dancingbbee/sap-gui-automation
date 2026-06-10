@@ -6,10 +6,12 @@
 
 ## 0. 사전 점검 (설치 전 필수)
 
-### 0-1. macOS 인지
+### 0-1. OS 판별 → 분기
 ```bash
-uname -s   # → "Darwin" 이어야 함. 아니면 이 도구는 macOS 전용이라 중단.
+uname -s   # "Darwin" → 아래 macOS(0-2~0-6). Windows(MINGW/CYGWIN/MSYS 또는 PowerShell) → "0W. Windows" 섹션으로.
 ```
+- macOS: 0-2 ~ 0-6 진행.
+- Windows: 이 도구는 COM(win32com)으로 동작 — 0-2~0-6(Java/자동화권한 등) 대신 맨 아래 **"0W. Windows 사전 점검"** 을 따른다.
 
 ### 0-2. SAP GUI for Java 설치 확인
 ```bash
@@ -39,6 +41,36 @@ grep -i scripting ~/Library/Preferences/SAP/settings 2>/dev/null
 처음 `SAP (daemon).app` 을 실행하면 macOS 가 **"이 앱이 'SAP GUI' 를 제어하려 합니다 — 허용?"** 를 한 번 물어본다. **반드시 "허용"** 해야 한다.
 - 이 권한은 SAP 가 `-f` 스크립트 완료 시 띄우는 "스크립트 실행 완료" 알림창을 자동으로 닫는 데만 쓰인다 (네트워크/비밀번호와 무관, 로컬 전용).
 - 시스템 설정 → 개인정보 보호 및 보안 → 자동화 에서 나중에 확인/변경 가능.
+
+---
+
+## 0W. Windows 사전 점검 (Windows 인 경우)
+
+> Windows 는 COM(win32com)으로 SAP 에 직접 attach 한다. **daemon·토큰·런처·자동화권한이 모두 불필요**하다. `runtime/install.ps1` 이 1~2 를 점검해준다.
+
+### 0W-1. Python 3
+```powershell
+python --version   # Python 3.x. 없으면 https://python.org 에서 설치.
+```
+
+### 0W-2. pywin32 (win32com 제공)
+```powershell
+python -c "import win32com.client"   # 오류 없으면 OK
+# 없으면:
+pip install pywin32
+```
+
+### 0W-3. SAP GUI for Windows 설치 + Scripting 활성화
+- **SAP GUI for Windows** 설치돼 있어야 한다 (Java 판 아님).
+- SAP Logon → Options → **Accessibility & Scripting → Scripting → "Enable scripting"** 체크. ("Notify when a script attaches/opens connection" 두 개는 해제 권장.)
+- 레지스트리 자동 변경은 하지 않는다 (보안 토글이라 사용자가 직접).
+
+### 0W-4. 서버측 Scripting 허용 (Basis 영역)
+`sapgui/user_scripting = TRUE` — macOS 와 동일. 로그인 후 `sapctl health` 의 conns 는 나오는데 조작이 막히면 이 설정 → **Basis 팀에 요청**.
+
+### 0W-5. 실행
+- **평소처럼 SAP GUI 실행 + 로그인** (특별 런처 불필요 — COM 이 자동 등록).
+- `python <plugin>\runtime\sapctl health` → conns 가 나오면 준비 완료.
 
 ---
 
