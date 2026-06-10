@@ -163,30 +163,39 @@ var ENLARGE_RELAYOUT_MS = 600;     // SAP relayouts its working pane async on re
 var ENLARGE_OFFSCREEN_X = 30000;   // move off-screen during enlarge so it's invisible
 
 function screenshot(path, match, enlarge) {
-  var Frame         = java.awt.Frame;
+  var Window        = java.awt.Window;
   var BufferedImage = java.awt.image.BufferedImage;
   var ImageIO       = javax.imageio.ImageIO;
 
   var target = null, origBounds = null;
 
-  // step 1 (EDT): locate the frame; if small, move it OFF-SCREEN and enlarge.
-  // Doing the resize off-screen means the user never sees the window grow/shrink
-  // (the earlier in-place resize was visible behind other windows). setBounds
-  // does NOT change z-order/focus, so the window does not come to front.
+  // step 1 (EDT): locate the window; if it's the small main window, move it
+  // OFF-SCREEN and enlarge. Doing the resize off-screen means the user never
+  // sees the window grow/shrink; setBounds does NOT change z-order/focus, so the
+  // window does not come to front.
   runOnEDT(function() {
-    var frames = Frame.getFrames();
-    for (var i = 0; i < frames.length; i++) {
-      var f = frames[i];
+    // Window.getWindows() includes Frames AND Dialogs. SAP modal popups are
+    // SAPDialog (a java.awt.Dialog), which Frame.getFrames() does NOT return —
+    // so matching only Frames misses every modal. Scan all windows.
+    var wins = Window.getWindows();
+    for (var i = 0; i < wins.length; i++) {
+      var f = wins[i];
       if (!f.isShowing()) continue;
-      var title = String(f.getTitle());
+      var title = ""; try { title = String(f.getTitle()); } catch (e) {}  // Window base has no getTitle
       var cls = String(f.getClass().getName());
+      var isSap = cls.indexOf("SAPFrame") >= 0 || cls.indexOf("SAPDialog") >= 0;
       if (match && title.indexOf(match) >= 0) { target = f; break; }
-      if (!match && cls.indexOf("SAPFrame") >= 0) {
+      if (!match && isSap) {
         if (target == null || (f.getWidth() * f.getHeight()) > (target.getWidth() * target.getHeight())) target = f;
       }
     }
-    if (target == null) throw new java.lang.RuntimeException("no matching SAP frame (match=" + match + ")");
-    if (enlarge !== false && (target.getWidth() < ENLARGE_W || target.getHeight() < ENLARGE_H)) {
+    if (target == null) throw new java.lang.RuntimeException("no matching SAP window (match=" + match + ")");
+    // Enlarge ONLY the main window (SAPFrame). SAP modals/dialogs are
+    // fixed-layout: growing them doesn't reflow content, it just pads the
+    // capture with whitespace (issue #2). The main window's working pane does
+    // reflow, so enlarge is useful there.
+    var isFrame = String(target.getClass().getName()).indexOf("SAPFrame") >= 0;
+    if (enlarge !== false && isFrame && (target.getWidth() < ENLARGE_W || target.getHeight() < ENLARGE_H)) {
       origBounds = target.getBounds();
       var ew = Math.max(ENLARGE_W, target.getWidth()), eh = Math.max(ENLARGE_H, target.getHeight());
       target.setBounds(ENLARGE_OFFSCREEN_X, origBounds.y, ew, eh);  // off-screen + enlarged, atomic
@@ -207,7 +216,8 @@ function screenshot(path, match, enlarge) {
     g.dispose();
     new File(CACHE_DIR).mkdirs();
     ImageIO.write(img, "png", new File(path));
-    return { ok: true, path: path, w: w, h: h, title: String(target.getTitle()), enlarged: (origBounds != null) };
+    var tt = ""; try { tt = String(target.getTitle()); } catch (e) {}
+    return { ok: true, path: path, w: w, h: h, title: tt, enlarged: (origBounds != null) };
   });
 
   // step 4 (EDT): restore original size.

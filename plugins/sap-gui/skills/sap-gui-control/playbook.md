@@ -4,7 +4,7 @@
 
 > **멀티OS**: `sapctl` 은 OS 자동 감지 — macOS=`sap-daemon.js` (HTTP `127.0.0.1:18765`), Windows=`win32com` COM 직접. **`transact` step JSON 이 OS 공통 인터페이스이니 step 으로 작성하는 걸 우선**한다. **`exec`(임의 JS)는 macOS 전용** escape hatch (Windows 는 "미지원" 에러 → step 으로 대체). 체크박스/라디오는 `{"select":"<id>","value":true}`, 상태바는 `{"read":"wnd[0]/sbar"}` step 으로 — exec 없이 양 OS 에서 동작.
 
-> **캡처는 창을 앞으로 가져오지 않는다 (양 OS 공통)**: macOS 는 `Frame.paintAll()`, Windows 는 Win32 `PrintWindow`(PW_RENDERFULLCONTENT) 로 렌더 — 둘 다 **occlusion·focus 무관**이라 SAP 창이 다른 창에 가려져 있거나 최소화돼 있어도 캡처되고, 사용자가 보던 다른 작업을 방해하지 않는다. 작은 창은 **화면 밖에서 잠깐 확대→캡처→복원**(가독성 ↑, 깜빡임 없음) — `--no-enlarge` 로 끌 수 있다. 기본 캡처 대상은 **최상위/활성 창**이라 모달 popup(wnd[1]+)이 떠 있으면 그게 잡힌다; 특정 창은 `--wnd N`(또는 step `{"screenshot":true,"wnd":1}`)으로 지정. 산출물은 항상 PNG.
+> **캡처는 창을 앞으로 가져오지 않는다 (양 OS 공통)**: macOS 는 `Window.paintAll()`(모든 top-level Window — `SAPFrame` 메인 + `SAPDialog` 모달 포함), Windows 는 Win32 `PrintWindow`(PW_RENDERFULLCONTENT) 로 렌더 — 둘 다 **occlusion·focus 무관**이라 SAP 창이 가려져 있거나 최소화돼 있어도 캡처되고, 사용자가 보던 다른 작업을 방해하지 않는다. 기본 캡처 대상은 **최상위/활성 창**이라 모달 popup(wnd[1]+)이 떠 있으면 그게 잡힌다; 특정 창은 `--wnd N`(또는 step `{"screenshot":true,"wnd":1}`)으로 지정. **작은 메인 창**은 화면 밖에서 잠깐 확대→캡처→복원(가독성 ↑, 깜빡임 없음, `--no-enlarge` 로 끔). **모달/다이얼로그는 확대하지 않는다** — 고정 레이아웃이라 키워도 내용이 reflow 안 되고 여백만 늘기 때문(native 크기로 캡처해도 선명). 산출물은 항상 PNG.
 
 ## 0. 전제 / 안전
 
@@ -199,8 +199,9 @@ sapctl exec 'var s=application.findById("/app/con[0]/ses[0]"); "wnd1=" + (s.find
 | `findById` null | 화면이 예상과 다름. 먼저 snapshot 으로 실제 트리 확인 |
 | getChildren hang | Z-custom container lazy-load. 트리 walk 포기, screenshot 으로 |
 | 스크린샷이 엉뚱한 창 | 기본은 타겟 세션의 **최상위/활성 창**(모달 우선). 특정 창은 `--wnd N`(0=메인, 1=첫 모달), 또는 `--match` 로 창 제목 substring. |
-| 모달 popup 이 안 잡히고 뒤 메인화면만 캡처됨 | `--wnd 1` 로 모달 명시. (Windows=PrintWindow 로 모달 hwnd 직접 캡처 / macOS=모달 프레임 제목 매칭 best-effort) |
-| 캡처 때 SAP 창이 잠깐 깜빡/이동 | 작은 창 확대 캡처 과정. 거슬리면 `--no-enlarge`. (Windows: 포그라운드 점유 없이 `SWP_NOACTIVATE` 로 처리) |
+| 모달 popup 이 안 잡히고 뒤 메인화면만 캡처됨 | 기본이 최상위 창이라 보통 자동으로 모달이 잡힘. 명시하려면 `--wnd 1`. (Windows=PrintWindow 로 모달 hwnd 직접 / macOS=`Window.getWindows()` 로 `SAPDialog` 모달까지 paintAll — `Frame.getFrames()` 는 Dialog 를 못 봄) |
+| 모달 캡처가 큰 여백으로 채워짐 | 구버전(2.1.0)에서 enlarge 가 고정 레이아웃 모달까지 키워 발생(이슈 #2). **2.1.1+ 에서 모달은 확대 스킵** — native 크기로 선명하게 캡처. |
+| 캡처 때 SAP 창이 잠깐 깜빡/이동 | 작은 **메인** 창 확대 캡처 과정. 거슬리면 `--no-enlarge`. (Windows: 포그라운드 점유 없이 `SWP_NOACTIVATE` 로 처리. 모달은 확대 안 하므로 해당 없음) |
 | (Windows) 스크린샷이 `.bmp` 로 저장됨 | Pillow 미설치 → PrintWindow 대신 HardCopy(BMP) fallback. `py -3 -m pip install --user Pillow` 로 PNG 직접 저장 활성화 |
 | SAP 가 종료 안 됨 / 창 없이 떠있음 | 창 없는 잔존 JVM. `sapctl kill-orphans` (포트 안 잡고 창 0개인 SAP 만 종료, daemon·세션은 보존). 미리보려면 `--dry-run` |
 | `sess=null` / `/app/con[0]/ses[0] not found` (targets 엔 보이는데 exec/transact/snapshot 만 실패) | 잔존 JVM 으로 **con/ses 인덱스 불일치**. ① `sapctl targets` 로 실제 살아있는 인덱스 확인 → `--con/--ses` 로 그 인덱스 지정, ② 또는 `sapctl kill-orphans` 로 잉여 JVM 정리(근본 해결). macOS 진단: `sapctl exec 'var o="";for(var c=0;c<3;c++)for(var s=0;s<3;s++){try{var e=application.findById("/app/con["+c+"]/ses["+s+"]");if(e)o+="con"+c+"ses"+s+"="+e.info.getTransaction()+";"}catch(x){}}o'` |

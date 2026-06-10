@@ -356,10 +356,14 @@ class ComBackend(Backend):
             except Exception:
                 left = top = width = height = 0
 
-        # 2) enlarge a small window off-screen (legibility). SWP_NOACTIVATE keeps
-        #    it in the background — no focus/z-order change (mirrors macOS).
+        # 2) enlarge a small MAIN window off-screen (legibility). SWP_NOACTIVATE
+        #    keeps it in the background — no focus/z-order change (mirrors macOS).
+        #    Skip modals/dialogs (wnd[1]+): they are fixed-layout, so growing them
+        #    doesn't reflow content — it just pads the capture with whitespace
+        #    (issue #2). A native-size PrintWindow of a modal is already crisp.
         restore_rect = None
-        if (enlarge and not was_min and hwnd and width > 0 and height > 0
+        if (enlarge and window_id == "wnd[0]" and not was_min and hwnd
+                and width > 0 and height > 0
                 and (width < self._ENLARGE_W or height < self._ENLARGE_H)):
             restore_rect = [left, top, width, height]
             ew = max(self._ENLARGE_W, width)
