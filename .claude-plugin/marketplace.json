@@ -1,0 +1,18 @@
+{
+  "name": "sap-daemon-tools",
+  "description": "SAP GUI for Java (macOS) automation — Claude Code plugin marketplace",
+  "owner": {
+    "name": "dancingbbee"
+  },
+  "plugins": [
+    {
+      "name": "sap-gui",
+      "source": "./plugins/sap-gui",
+      "description": "SAP GUI for Java (macOS) 자연어 백그라운드 자동제어 — 창 조회, 트랜잭션 navigate, 화면 판독, 스크린샷. 멀티타겟 지원.",
+      "version": "1.0.0",
+      "author": {
+        "name": "dancingbbee"
+      }
+    }
+  ]
+}
