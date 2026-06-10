@@ -152,6 +152,18 @@ echo '{"steps":[{"read":"wnd[0]/sbar"}]}' | sapctl transact -   # → "E:자재 
 
 > 원칙: 화면 구조(snapshot) + status bar 메시지 + 표준 실행 키 3가지면 T-code 하드코딩 없이 대부분 진행된다. 막히는 핵심 원인은 거의 "필수 입력 필드 누락" 이고, status bar 가 그걸 알려준다.
 
+## 3.6 검증된 플로우 재사용 (로컬 캐시 — 선택)
+
+한 번 풀어낸 transact step 시퀀스는 **재현 가능**하므로 로컬에 저장해두면 다음엔 자가진단 없이 바로 쓴다.
+
+- 저장 위치는 **반드시 plugin 디렉토리 밖** — 그래야 `/plugin update` 때 안 덮어써진다. 권장:
+  - `~/.sap-daemon/flows.md` (토큰과 같은 사용자 디렉토리, 업데이트 무관) — 자유 형식으로 "<T-code> → step JSON" 기록
+  - 또는 개인 skill 의 `tcodes/<TCODE>.md` (예: 별도 로컬 skill)
+- **막히기 전에 먼저** 이 캐시가 있으면 읽어서 해당 T-code 시퀀스를 찾는다. 있으면 그대로 transact.
+- 이 캐시는 **사용자 소유·plugin 밖**이라 회사 특화 값(자재/플랜트 등)을 담아도 public repo 와 무관하다.
+
+> 이 플러그인 자체는 검증 플로우를 번들하지 않는다(각 환경이 다름). 위는 "있으면 참조하라"는 discovery 안내일 뿐이다.
+
 ## 4. 자주 쓰는 vkey
 
 | vkey | 의미 |
@@ -184,3 +196,4 @@ sapctl exec 'var s=application.findById("/app/con[0]/ses[0]"); "wnd1=" + (s.find
 | getChildren hang | Z-custom container lazy-load. 트리 walk 포기, screenshot 으로 |
 | 스크린샷이 엉뚱한 창 | `--match` 로 창 제목 substring 지정. 없으면 가장 큰 SAPFrame 자동 선택 |
 | SAP 가 종료 안 됨 / 창 없이 떠있음 | 창 없는 잔존 JVM. `sapctl kill-orphans` (포트 안 잡고 창 0개인 SAP 만 종료, daemon·세션은 보존). 미리보려면 `--dry-run` |
+| `sess=null` / `/app/con[0]/ses[0] not found` (targets 엔 보이는데 exec/transact/snapshot 만 실패) | 잔존 JVM 으로 **con/ses 인덱스 불일치**. ① `sapctl targets` 로 실제 살아있는 인덱스 확인 → `--con/--ses` 로 그 인덱스 지정, ② 또는 `sapctl kill-orphans` 로 잉여 JVM 정리(근본 해결). macOS 진단: `sapctl exec 'var o="";for(var c=0;c<3;c++)for(var s=0;s<3;s++){try{var e=application.findById("/app/con["+c+"]/ses["+s+"]");if(e)o+="con"+c+"ses"+s+"="+e.info.getTransaction()+";"}catch(x){}}o'` |

@@ -67,7 +67,7 @@ powershell -ExecutionPolicy Bypass -File <plugin>\runtime\install.ps1
 /plugin update sap-gui                          # 플러그인 적용
 ```
 - `daemon` 코드(캡처·자가진단 등)가 바뀐 릴리스는 적용하려면 **SAP 한 번 재시작** (`SAP (daemon)` 다시 실행). `sapctl` CLI 변경은 재시작 없이 바로 적용.
-- 버전이 올라간 릴리스만 업데이트로 인지된다 (현재: **2.0.2** — 멀티OS).
+- 버전이 올라간 릴리스만 업데이트로 인지된다 (현재: **2.0.3** — 멀티OS).
 
 ## 🩺 문제 해결
 
