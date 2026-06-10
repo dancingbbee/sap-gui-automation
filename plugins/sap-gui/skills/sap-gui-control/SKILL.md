@@ -27,7 +27,9 @@ sapctl health     # (Windows: python <runtime>\sapctl health)
 - `conns: 0` → 로그인 안 됨. Logon Pad 에서 시스템 더블클릭 로그인 요청.
 - `conns: 1` 이상 → 준비 완료.
 
-> `sapctl` 이 PATH 에 없으면 plugin runtime 의 `sapctl` 절대경로를 쓴다 (macOS: `~/bin/sapctl` 가능 / Windows: `python <runtime>\sapctl`).
+> `sapctl` 이 PATH 에 없으면 plugin runtime 의 `sapctl` 절대경로를 쓴다.
+> - macOS: `~/bin/sapctl` 또는 `<runtime>/sapctl`
+> - **Windows**: `py -3 "<runtime>\sapctl" ...` — `python` 대신 **`py -3`** 우선 (PATH 선두의 Microsoft Store alias `WindowsApps\python.exe` 가 exit 9009 로 실패할 수 있음). `py` 가 없으면 `where python` 으로 `WindowsApps` 아닌 실제 경로를 찾아 그걸로 호출.
 
 ## 1. "sap 창 보여줘" / 창 리스트
 

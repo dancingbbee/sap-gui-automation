@@ -39,10 +39,11 @@ uname -s    # Darwin → macOS / MINGW·MSYS·CYGWIN 또는 Windows → Windows
 **런타임 설치가 거의 없다.** Windows 는 COM(win32com)으로 SAP 에 직접 attach — daemon·토큰·런처·자동화권한이 **전부 불필요**하다. `install.ps1` 은 점검·안내만 한다.
 
 **사전 점검**:
-1. `python --version` → Python 3.x
-2. `python -c "import win32com.client"` → 오류 없으면 OK. 오류면 `pip install pywin32`
+1. **실제 Python 탐지** — `py -3 --version` 우선. (PATH 선두의 Microsoft Store alias `WindowsApps\python.exe` 가 exit 9009/빈 출력으로 오작동할 수 있음. `py` 없으면 `where python` 결과 중 `WindowsApps` 아닌 경로 사용.) 이후 모든 호출에 이 인터프리터(`py -3` 또는 실제 경로)를 일관되게 쓴다.
+2. `<py> -c "import win32com.client"` → 오류 없으면 OK. 오류면 `<py> -m pip install --user pywin32`
 3. **SAP GUI for Windows** 설치됨 + Options → Accessibility & Scripting → Scripting → **"Enable scripting"** 체크 (사용자 육안 확인; "Notify..." 2개 해제 권장)
 4. 서버측 `sapgui/user_scripting=TRUE` (로그인 후 검증; 안 되면 Basis 팀)
+   (install.ps1 이 1~2 를 자동으로 처리 — 실제 python 탐지 + pywin32/Pillow 설치.)
 
 **설치 (LLM 이 능동 실행하라 — 안내만 하지 말 것)**:
 1. `install.ps1` 경로를 찾는다:
@@ -57,7 +58,7 @@ uname -s    # Darwin → macOS / MINGW·MSYS·CYGWIN 또는 Windows → Windows
    - pywin32 가 없으면 이 스크립트가 `pip install pywin32` 를 **직접 실행**한다.
    - 단 **SAP GUI 스크립팅 'Enable' 체크(레지스트리/보안 토글)는 자동 변경하지 않는다** — 사용자에게 SAP Logon → 옵션 → Scripting → Enable 체크를 요청하라 (출력 메시지에 안내됨).
 3. 실행: **평소처럼 SAP GUI 실행 + 로그인** (특별 런처 불필요 — COM 자동 attach)
-4. 확인: `python "<runtime>\sapctl" health` → `conns` 나오면 준비 완료
+4. 확인: `py -3 "<runtime>\sapctl" health` (Store alias 회피) → `conns` 나오면 준비 완료
 
 > Windows 는 `sap-daemon.js`·`.app`·토큰을 쓰지 않는다. `exec`(JS)도 macOS 전용이라 Windows 에선 `transact` step 으로 조작한다 (playbook 참조).
 

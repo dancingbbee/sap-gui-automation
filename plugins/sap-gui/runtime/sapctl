@@ -18,6 +18,13 @@ import json
 import os
 import sys
 
+# Force UTF-8 stdout so non-ASCII SAP text (한글/日本語) isn't mangled by the
+# OS code page (e.g. Windows CP949). Consumers (Claude Code) read UTF-8.
+try:
+    sys.stdout.reconfigure(encoding="utf-8")
+except Exception:
+    pass
+
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from backends import select_backend
 
@@ -54,7 +61,7 @@ def main():
     sub = p.add_subparsers(dest="cmd", required=True)
 
     sub.add_parser("health", help="ping daemon / check COM attach")
-    sub.add_parser("targets", help="list open connections × sessions (pick one to control)")
+    sub.add_parser("targets", help="list open connections x sessions (pick one to control)")
 
     # lifecycle
     sub.add_parser("status", help="is SAP control available + logged in?")

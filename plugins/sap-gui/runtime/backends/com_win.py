@@ -35,6 +35,53 @@ def _default_shot_path():
     return os.path.join(os.environ.get("TEMP", os.getcwd()), "sap-shot.png")
 
 
+def _is_png(path):
+    try:
+        with open(path, "rb") as f:
+            return f.read(8) == b"\x89PNG\r\n\x1a\n"
+    except Exception:
+        return False
+
+
+def _hardcopy_png(window, path):
+    """Capture `window` to a real PNG at `path`.
+
+    SAP GUI's HardCopy(filename) ignores the extension and writes BMP. We:
+      1) try HardCopy(filename, "PNG") — newer SAP GUI supports it,
+      2) verify the file is really PNG (magic bytes),
+      3) else fall back to BMP + Pillow conversion,
+      4) if Pillow is absent, keep the BMP and report the real path/format.
+    Returns a result dict.
+    """
+    # 1) native PNG attempt
+    try:
+        window.HardCopy(path, "PNG")
+        if _is_png(path):
+            return {"ok": True, "path": path, "format": "png"}
+    except Exception:
+        pass
+    # 2) BMP then convert
+    bmp = (path[:-4] if path.lower().endswith(".png") else path) + ".bmp"
+    try:
+        window.HardCopy(bmp)
+    except Exception as e:
+        return {"ok": False, "error": "HardCopy failed: %s" % e}
+    try:
+        from PIL import Image
+        Image.open(bmp).save(path, "PNG")
+        try:
+            os.remove(bmp)
+        except Exception:
+            pass
+        return {"ok": True, "path": path, "format": "png", "note": "converted from BMP via Pillow"}
+    except ImportError:
+        return {"ok": True, "path": bmp, "format": "bmp",
+                "note": "saved BMP (PNG needs Pillow: pip install Pillow). "
+                        "Claude image Read wants PNG/JPG — convert if needed."}
+    except Exception as e:
+        return {"ok": True, "path": bmp, "format": "bmp", "note": "PNG convert failed: %s" % e}
+
+
 class ComBackend(Backend):
     # ---- lifecycle ----
     def health(self, timeout):
@@ -119,8 +166,7 @@ class ComBackend(Backend):
             app = _engine()
             sess = _session(app, body.get("con", 0), body.get("ses", 0))
             p = body.get("path") or _default_shot_path()
-            sess.findById("wnd[0]").HardCopy(p)
-            return {"ok": True, "path": p}
+            return _hardcopy_png(sess.findById("wnd[0]"), p)
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
@@ -178,8 +224,7 @@ class ComBackend(Backend):
             return {"snapshot": self._walk(sess.findById(st["snapshot"]), 0, st.get("maxDepth", 6))}
         if "screenshot" in st:
             p = st.get("path") or _default_shot_path()
-            sess.findById("wnd[0]").HardCopy(p)
-            return {"ok": True, "path": p}
+            return _hardcopy_png(sess.findById("wnd[0]"), p)
         if "sleep" in st:
             time.sleep(st["sleep"] / 1000.0)
             return {"slept": st["sleep"]}
