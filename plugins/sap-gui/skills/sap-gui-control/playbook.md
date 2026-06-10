@@ -115,6 +115,37 @@ sapctl screenshot --match "조회" -o ~/vault/.../shot.png
 3. 필드 ID 확인 → `{"set":...,"to":...}` 로 수정
 4. **저장은 사용자 확인 후** `{"press":"wnd[0]/tbar[0]/btn[11]"}` 또는 `{"vkey":11,"wnd":0}` (Ctrl+S)
 
+## 3.5 다음 화면으로 못 넘어갈 때 — 자가 진단 (중요)
+
+특정 T-code 에서 "어떻게 다음 화면으로 가는지" 모를 때, **T-code 별 정답을 외우지 말고 아래 절차로 그 자리에서 스스로 알아낸다.** 대부분의 화면이 이 절차로 해결된다.
+
+**1) 현재 화면 전부 열거** — 입력 필드·버튼·탭이 뭐가 있는지:
+```bash
+sapctl snapshot --id 'wnd[0]/usr' --depth 4
+```
+- `GuiCTextField`/`GuiTextField` 중 `text` 가 비어있는 것 = **채워야 할 입력 필드** (보통 화면 키값: 자재/오더/회사코드/날짜 등)
+- `GuiButton`/`GuiTab` = 누를 수 있는 것
+
+**2) status bar 읽기** — SAP 가 "뭐가 필요한지" 말해준다 (`sess` = exec 스코프에 주입된 세션 객체):
+```bash
+sapctl exec 'var sb=sess.findById("wnd[0]/sbar"); sb.getMessageType()+": "+sb.getText()'
+# 타겟 지정: sapctl exec --con 0 --ses 1 '...'
+```
+`E:`(Error)/`W:`(Warning) 메시지면 그 필드/조건이 빠진 것 — 메시지 내용이 곧 힌트. `getMessageType()` 이 빈 문자열이면 에러 없음(정상 진행 가능). `getMessageId()`+`getMessageNumber()` 로 정확한 메시지도 식별 가능.
+
+**3) 실행 키 시도** (대부분 이 순서로 다음 화면 진입):
+- 입력 필드 채운 뒤 **Enter** (`{"vkey":0}`) — 조회/단순 진입
+- 안 되면 **F8** (`{"vkey":8}`) — 실행(리포트·조회 결과 화면)
+- 화면 상단 toolbar 버튼: `snapshot` 에서 본 `wnd[0]/tbar[1]/btn[N]` 을 `{"press":...}`
+
+**4) popup 뜨면** §5 절차로 (확인/취소/버튼 선택).
+
+**5) 그래도 막히면**:
+- 화면 캡처해서 사용자에게 보여주고 판단 요청: `sapctl screenshot -o /tmp/stuck.png` → Read 로 확인
+- **내부 지식베이스가 있으면** 해당 T-code 사용법 조회 (예: `qmd query "<TCODE> 조회 조건 입력"` 또는 사내 매뉴얼). 조회 결과의 입력값/조건을 step 으로 옮긴다. (이 plugin 은 사내 데이터를 포함하지 않는다 — 각자 환경의 KB 를 조회한다.)
+
+> 원칙: 화면 구조(snapshot) + status bar 메시지 + 표준 실행 키 3가지면 T-code 하드코딩 없이 대부분 진행된다. 막히는 핵심 원인은 거의 "필수 입력 필드 누락" 이고, status bar 가 그걸 알려준다.
+
 ## 4. 자주 쓰는 vkey
 
 | vkey | 의미 |
