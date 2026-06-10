@@ -161,6 +161,8 @@ def main():
     pc.add_argument("--con", type=int, default=None, help="connection index")
     pc.add_argument("--ses", type=int, default=None, help="session index")
     pc.add_argument("--system", default=None, help="capture target by system name")
+    pc.add_argument("--no-enlarge", action="store_true",
+                    help="capture at current window size (default: enlarge small windows for legibility)")
 
     pt = sub.add_parser("transact", help="run a declarative step list from a JSON file ('-' = stdin)")
     pt.add_argument("file")
@@ -198,6 +200,8 @@ def main():
             v = getattr(args, k, None)
             if v is not None:
                 body[k] = v
+        if args.no_enlarge:
+            body["enlarge"] = False
         return emit(call("POST", "/screenshot", body, timeout=args.timeout), args.raw)
     if args.cmd == "transact":
         text = sys.stdin.read() if args.file == "-" else open(args.file).read()

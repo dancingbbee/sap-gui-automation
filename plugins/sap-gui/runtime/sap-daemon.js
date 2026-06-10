@@ -154,7 +154,13 @@ function snapshot(comp, depth, maxDepth) {
 }
 
 // ---- screenshot via Frame.paintAll (occlusion-independent) ----
-function screenshot(path, match) {
+// enlarge (default true): temporarily grow a small SAP window so the capture is
+// large/legible, then restore. setSize/setBounds do NOT change z-order or focus
+// (verified) — the window does NOT come to front, so the user's other work is
+// undisturbed. paintAll renders the component tree regardless of occlusion.
+var ENLARGE_W = 1600, ENLARGE_H = 1000;
+
+function screenshot(path, match, enlarge) {
   var Frame         = java.awt.Frame;
   var BufferedImage = java.awt.image.BufferedImage;
   var ImageIO       = javax.imageio.ImageIO;
@@ -174,14 +180,30 @@ function screenshot(path, match) {
       }
     }
     if (target == null) throw new java.lang.RuntimeException("no matching SAP frame (match=" + match + ")");
-    var w = target.getWidth(), h = target.getHeight();
-    var img = new BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB);
-    var g = img.createGraphics();
-    target.paintAll(g);
-    g.dispose();
-    new File(CACHE_DIR).mkdirs();
-    ImageIO.write(img, "png", new File(path));
-    return { ok: true, path: path, w: w, h: h, title: String(target.getTitle()) };
+
+    // enlarge-in-place for a hi-res capture, restore afterward
+    var origBounds = null;
+    if (enlarge !== false && (target.getWidth() < ENLARGE_W || target.getHeight() < ENLARGE_H)) {
+      try {
+        origBounds = target.getBounds();
+        target.setSize(Math.max(ENLARGE_W, target.getWidth()), Math.max(ENLARGE_H, target.getHeight()));
+        target.validate();
+      } catch (e) { origBounds = null; }
+    }
+    try {
+      var w = target.getWidth(), h = target.getHeight();
+      var img = new BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB);
+      var g = img.createGraphics();
+      target.paintAll(g);
+      g.dispose();
+      new File(CACHE_DIR).mkdirs();
+      ImageIO.write(img, "png", new File(path));
+      return { ok: true, path: path, w: w, h: h, title: String(target.getTitle()), enlarged: (origBounds != null) };
+    } finally {
+      if (origBounds != null) {
+        try { target.setBounds(origBounds); target.validate(); } catch (e) {}
+      }
+    }
   });
 }
 
@@ -196,7 +218,7 @@ function screenshot(path, match) {
 //   { read: "wnd[0]/usr/ctxtX" }                   → returns getText
 //   { sleep: 500 }                                 → Thread.sleep(ms)
 //   { snapshot: "wnd[0]/usr", maxDepth: 4 }        → subtree snapshot
-//   { screenshot: true, match?: "...", path?: "..." }
+//   { screenshot: true, match?: "...", path?: "...", enlarge?: false }
 function abs(id, prefix) {
   if (id.indexOf("/app/") === 0) return id;       // already absolute
   return (prefix || "/app/con[0]/ses[0]") + "/" + id;
@@ -259,7 +281,7 @@ function runStep(step, tgt) {
         }
       }
     }
-    return screenshot(p, m);
+    return screenshot(p, m, step.enlarge);
   }
   return { error: "unknown step", step: step };
 }
@@ -378,7 +400,7 @@ function handle(sock) {
             }
           }
         }
-        sendJSON(pw, 200, "OK", screenshot(p, m));
+        sendJSON(pw, 200, "OK", screenshot(p, m, bodyJson.enlarge));
       } catch (e) {
         sendJSON(pw, 500, "Error", { ok: false, error: String(e) });
       }
