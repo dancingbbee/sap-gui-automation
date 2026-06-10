@@ -1,47 +1,57 @@
 ---
-description: 이 PC 에 SAP GUI daemon 런타임을 설치한다 (토큰·캐시·런처 셋업)
+description: 이 PC 에 SAP GUI 자동화 런타임을 설치한다 (OS 자동 분기 — macOS/Windows)
 ---
 
-# SAP daemon 설치
+# SAP 자동화 런타임 설치
 
-이 plugin 에 번들된 런타임을 이 PC 에 설치한다. 설치 스크립트는 plugin 의 `runtime/install.sh` 다.
+`sapctl` 은 OS 에 따라 다르게 동작한다. **먼저 OS 를 판별하고 분기하라.**
 
-## 0. 사전 점검 (설치 전 필수)
+```bash
+uname -s    # Darwin → macOS / MINGW·MSYS·CYGWIN 또는 Windows → Windows
+```
+- `Darwin` → **A. macOS** 절차
+- 그 외(Windows/MINGW 등) → **B. Windows** 절차
 
-설치 전에 아래를 순서대로 확인하고, 하나라도 실패하면 멈추고 사용자에게 알려라:
+---
 
-1. `uname -s` → `Darwin` (macOS 전용)
-2. `ls -d /Applications/SAP\ Clients/*/*.app/Contents/MacOS/SAPGUI 2>/dev/null` → 경로 출력되면 SAP GUI for Java 설치됨. 없으면 설치 안내 후 중단.
-3. `python3 --version` → Python 3.x (sapctl 실행용)
-4. SAP GUI Scripting 클라이언트 설정 — 사용자에게 "Preferences → Web AS ABAP → 스크립팅 → 설정 체크" 육안 확인 요청
-5. (설치 후) 서버측 `sapgui/user_scripting=TRUE` — 로그인 후 `sapctl status` 의 conns 는 나오는데 exec 가 scripting-disabled 오류면 Basis 팀에 요청
-6. (첫 실행 시) macOS 자동화 권한 dialog → "허용" 안내
+## A. macOS
 
-install.sh 자체도 macOS/python3 를 자동 체크하고 미충족 시 중단한다.
+런타임 = `sap-daemon.js`(SAP GUI for Java 안 HTTP daemon) + `.app` 런처 + 토큰.
 
-## 절차
+**사전 점검** (하나라도 실패하면 멈추고 사용자에게 알려라):
+1. `ls -d /Applications/SAP\ Clients/*/*.app/Contents/MacOS/SAPGUI 2>/dev/null` → SAP GUI for Java 설치됨. 없으면 중단.
+2. `python3 --version` → Python 3.x
+3. SAP GUI Preferences → Web AS ABAP → 스크립팅 → "설정" 체크 (사용자 육안 확인)
+4. 서버측 `sapgui/user_scripting=TRUE` (로그인 후 검증; 안 되면 Basis 팀)
 
-1. plugin 의 runtime 디렉토리를 찾아라. plugin 이 marketplace 로 설치됐으면 보통:
-   - `~/.claude/plugins/<marketplace>/plugins/sap-gui/runtime/`
-   - 또는 `--plugin-dir` 로 로컬 로드했으면 그 경로의 `plugins/sap-gui/runtime/`
-   - `find ~/.claude/plugins -name install.sh -path '*sap-gui*' 2>/dev/null` 로 찾을 수 있다.
+**설치**:
+1. runtime 디렉토리 찾기: `find ~/.claude/plugins -name install.sh -path '*sap-gui*' 2>/dev/null`
+2. `bash <runtime>/install.sh` 실행 — 토큰(`~/.sap-daemon/token`) + 캐시(`~/Library/Caches/sap-daemon`) + 런처(`~/Applications/SAP (daemon).app`) 생성, `sapctl` 을 `~/bin` 에 링크
+3. 실행: Finder 에서 **`SAP (daemon)`** 더블클릭 (또는 `sapctl start`) → Logon Pad 로그인 → 첫 실행 시 자동화 권한 "허용"
+4. 확인: `sapctl status` → `conns: 1`
 
-2. 찾은 `install.sh` 를 실행한다:
-   ```bash
-   bash <runtime>/install.sh
-   ```
+해제: `bash <runtime>/uninstall.sh` (`--purge` 로 토큰·캐시까지).
 
-3. install.sh 가 하는 일 (모두 reversible):
-   - 인증 토큰 생성 (`~/.sap-daemon/token`)
-   - 스크린샷 캐시 디렉토리 생성 (`~/Library/Caches/sap-daemon`)
-   - 런처 생성 (`~/Applications/SAP-with-daemon.command`)
-   - `sapctl` 을 `~/bin` 에 링크 (있으면)
+---
 
-4. 설치 후 안내:
-   - `sapctl` 이 PATH 에 없으면 `~/bin` 을 PATH 에 추가하거나, alias 안내.
-   - SAP 실행: `sapctl start` (또는 런처 더블클릭) → Logon Pad 로그인.
-   - 확인: `sapctl status` → `conns: 1` 이면 준비 완료.
+## B. Windows
 
-5. 서버 측 요구사항 안내: SAP GUI Scripting 활성화 (`sapgui/user_scripting = TRUE`). 안 되어 있으면 Basis 팀 협조 필요.
+**런타임 설치가 거의 없다.** Windows 는 COM(win32com)으로 SAP 에 직접 attach — daemon·토큰·런처·자동화권한이 **전부 불필요**하다. `install.ps1` 은 점검·안내만 한다.
 
-해제는 `runtime/uninstall.sh` (옵션 `--purge` 로 토큰·캐시까지 제거).
+**사전 점검**:
+1. `python --version` → Python 3.x
+2. `python -c "import win32com.client"` → 오류 없으면 OK. 오류면 `pip install pywin32`
+3. **SAP GUI for Windows** 설치됨 + Options → Accessibility & Scripting → Scripting → **"Enable scripting"** 체크 (사용자 육안 확인; "Notify..." 2개 해제 권장)
+4. 서버측 `sapgui/user_scripting=TRUE` (로그인 후 검증; 안 되면 Basis 팀)
+
+**설치/점검**:
+1. runtime 디렉토리 찾기: `Get-ChildItem -Path "$env:USERPROFILE\.claude\plugins" -Recurse -Filter install.ps1 -ErrorAction SilentlyContinue | Select FullName` (또는 PowerShell 없으면 경로 직접)
+2. (선택) `powershell -ExecutionPolicy Bypass -File <runtime>\install.ps1` — pywin32·스크립팅 점검 안내. **이 스크립트는 아무것도 설치/변경하지 않고 점검만** 한다.
+3. 실행: **평소처럼 SAP GUI 실행 + 로그인** (특별 런처 불필요 — COM 자동 attach)
+4. 확인: `python <runtime>\sapctl health` → `conns` 나오면 준비 완료
+
+> Windows 는 `sap-daemon.js`·`.app`·토큰을 쓰지 않는다. `exec`(JS)도 macOS 전용이라 Windows 에선 `transact` step 으로 조작한다 (playbook 참조).
+
+---
+
+설치 후 양 OS 공통 확인: 사용자에게 **"지금 떠있는 sap 창 보여줘"** → `sapctl targets` 결과(창 목록)가 나오면 성공.

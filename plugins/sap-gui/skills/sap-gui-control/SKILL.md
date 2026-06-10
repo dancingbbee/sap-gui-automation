@@ -2,29 +2,32 @@
 name: sap-gui-control
 description: >
   Use when the user wants to view, navigate, read, or screenshot a running SAP
-  GUI for Java (macOS) screen via natural language — e.g. "sap 창 보여줘",
-  "지금 떠있는 sap 창 리스트", "MM03에서 자재 XXX 열어줘", "이 화면 캡처해서
-  vault에 정리해줘", "CO01 생산오더 만드는 법 단계별로 찍어줘", "MCP로 안 되는
-  basis 티코드 화면 읽고 수정해줘". Drives SAP through the local sap-daemon
-  (HTTP 127.0.0.1:18765) using the `sapctl` CLI. Works in the background — the
-  SAP window does not need to be focused or visible.
+  GUI screen via natural language — e.g. "sap 창 보여줘", "지금 떠있는 sap 창
+  리스트", "MM03에서 자재 XXX 열어줘", "이 화면 캡처해서 vault에 정리해줘",
+  "CO01 생산오더 만드는 법 단계별로 찍어줘", "MCP로 안 되는 basis 티코드 화면
+  읽고 수정해줘". Cross-platform: macOS (SAP GUI for Java via local daemon) and
+  Windows (SAP GUI for Windows via COM). Driven by the `sapctl` CLI, which
+  auto-detects the OS. Works in the background — the SAP window does not need to
+  be focused or visible.
 ---
 
-# SAP GUI 제어 (sap-daemon)
+# SAP GUI 제어 (sapctl)
 
-사용자가 SAP GUI for Java 화면을 자연어로 조회·조작·판독·캡처하려 할 때 사용한다. 실제 제어는 로컬 `sap-daemon` (SAP GUI 안에서 도는 HTTP 서버, `127.0.0.1:18765`) 을 `sapctl` CLI 로 호출해서 한다. **SAP 창이 앞에 있거나 보일 필요 없다** (백그라운드 동작, 가려져도 OK).
+사용자가 SAP GUI 화면을 자연어로 조회·조작·판독·캡처하려 할 때 사용한다. `sapctl` CLI 로 제어하며, **OS 를 자동 감지**한다 — macOS=SAP GUI for Java 안의 daemon(HTTP `127.0.0.1:18765`), Windows=SAP GUI for Windows COM(win32com 직접). **SAP 창이 앞에 있거나 보일 필요 없다** (백그라운드 동작).
+
+> **OS 차이 (조작은 동일)**: `transact` step JSON 은 양 OS 공통. **`exec`(임의 JS)는 macOS 전용** (Windows 는 "미지원" 에러 → step 으로). 체크박스/라디오 `{"select":...}`, 상태바 `{"read":"wnd[0]/sbar"}` step 으로 양쪽 동작.
 
 ## 0. 전제 확인 (항상 먼저)
 
 ```bash
-sapctl health
+sapctl health     # (Windows: python <runtime>\sapctl health)
 ```
-- `sapctl: command not found` → 런타임 미설치. `/sap-install` 안내 또는 README 참조.
-- `connect failed` → SAP GUI 가 안 떠있거나 daemon 미실행. 사용자에게 `~/Applications/SAP-with-daemon.command` 로 SAP 실행 + 로그인 요청.
+- `command not found` / 실행 불가 → 런타임 미설치. `/sap-install` 안내 또는 README 참조.
+- `ok:false` / `connect failed` → SAP GUI 미실행(또는 macOS daemon 미실행). SAP GUI 실행+로그인 요청. macOS: `SAP (daemon).app` 또는 `sapctl start`. Windows: 평소처럼 SAP GUI 실행.
 - `conns: 0` → 로그인 안 됨. Logon Pad 에서 시스템 더블클릭 로그인 요청.
 - `conns: 1` 이상 → 준비 완료.
 
-> `sapctl` 이 PATH 에 없으면 `~/bin/sapctl` 또는 plugin runtime 의 `sapctl` 절대경로를 쓴다.
+> `sapctl` 이 PATH 에 없으면 plugin runtime 의 `sapctl` 절대경로를 쓴다 (macOS: `~/bin/sapctl` 가능 / Windows: `python <runtime>\sapctl`).
 
 ## 1. "sap 창 보여줘" / 창 리스트
 
