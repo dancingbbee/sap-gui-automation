@@ -48,8 +48,9 @@ install.sh 가 하는 일:
 daemon 은 SAP GUI JVM **안에** 살아서 독립 수명이 없다 — SAP 켜면 같이 뜨고, SAP 끄면(Cmd+Q) 같이 죽는다. 그래서 별도 stop/restart 가 없다.
 
 ```bash
-sapctl start     # SAP (daemon).app 실행 (이미 떠있으면 no-op)
-sapctl status    # 떠있나 + 로그인됐나 + 창 수
+sapctl start          # SAP (daemon).app 실행 (이미 떠있으면 no-op)
+sapctl status         # 떠있나 + 로그인됐나 + 창 수
+sapctl kill-orphans   # 창 없이 남은 잔존 SAP JVM 종료 (daemon·세션은 보존; --dry-run 미리보기)
 # 종료: SAP 를 그냥 Cmd+Q (daemon 자동 종료)
 ```
 

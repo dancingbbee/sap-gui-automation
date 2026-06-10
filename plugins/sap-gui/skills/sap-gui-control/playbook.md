@@ -177,3 +177,4 @@ sapctl exec 'var s=application.findById("/app/con[0]/ses[0]"); "wnd1=" + (s.find
 | `findById` null | 화면이 예상과 다름. 먼저 snapshot 으로 실제 트리 확인 |
 | getChildren hang | Z-custom container lazy-load. 트리 walk 포기, screenshot 으로 |
 | 스크린샷이 엉뚱한 창 | `--match` 로 창 제목 substring 지정. 없으면 가장 큰 SAPFrame 자동 선택 |
+| SAP 가 종료 안 됨 / 창 없이 떠있음 | 창 없는 잔존 JVM. `sapctl kill-orphans` (포트 안 잡고 창 0개인 SAP 만 종료, daemon·세션은 보존). 미리보려면 `--dry-run` |

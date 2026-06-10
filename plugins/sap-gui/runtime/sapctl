@@ -108,6 +108,54 @@ def cmd_start(timeout):
                     "status": call("GET", "/health", timeout=timeout)}
     return {"ok": False, "error": "launched but daemon did not bind within 10s"}
 
+
+def list_sap_pids():
+    """PIDs of all running SAP GUI for Java processes."""
+    try:
+        out = subprocess.run(["pgrep", "-f", "SAPGUI 8.10"],
+                             capture_output=True, text=True, timeout=10).stdout
+        me = os.getpid()
+        return [int(p) for p in out.split() if p.strip().isdigit() and int(p) != me]
+    except Exception:
+        return []
+
+
+def _window_count(pid):
+    """Number of AX windows for a process; -1 if it can't be determined."""
+    script = ('tell application "System Events" to count windows of '
+              '(first application process whose unix id is %d)' % pid)
+    try:
+        r = subprocess.run(["osascript", "-e", script],
+                           capture_output=True, text=True, timeout=10)
+        return int(r.stdout.strip())
+    except Exception:
+        return -1
+
+
+def cmd_kill_orphans(dry_run):
+    """Kill SAP GUI processes that hold no daemon port AND have no windows
+    (leftover JVMs with no login session). The daemon and any window-bearing
+    SAP instance are preserved."""
+    daemon = daemon_pid()
+    result = {"ok": True, "daemon_pid": daemon, "checked": [], "orphans": [], "killed": []}
+    for pid in list_sap_pids():
+        if pid == daemon:
+            result["checked"].append({"pid": pid, "role": "daemon", "action": "keep"})
+            continue
+        wc = _window_count(pid)
+        if wc == 0:
+            result["orphans"].append(pid)
+            if dry_run:
+                result["checked"].append({"pid": pid, "windows": 0, "action": "would-kill"})
+            else:
+                subprocess.run(["kill", str(pid)], check=False)
+                result["killed"].append(pid)
+                result["checked"].append({"pid": pid, "windows": 0, "action": "killed"})
+        else:
+            result["checked"].append({"pid": pid, "windows": wc,
+                                       "action": "keep (has windows or unknown)"})
+    return result
+
 # Note: there is no stop/restart. The daemon is bound to the SAP GUI JVM's
 # lifetime — quit SAP GUI (Cmd+Q) and the daemon dies with it. Managing it
 # separately would only risk closing the user's logged-in sessions.
@@ -144,6 +192,9 @@ def main():
     # lifecycle (daemon is bound to SAP GUI; quit SAP to stop it — no stop/restart)
     sub.add_parser("status", help="is the daemon running + logged in?")
     sub.add_parser("start", help="launch SAP GUI with the daemon attached")
+    pko = sub.add_parser("kill-orphans",
+                         help="kill leftover SAP processes with no windows (not the daemon)")
+    pko.add_argument("--dry-run", action="store_true", help="list what would be killed, don't kill")
 
     pe = sub.add_parser("exec", help="evaluate a JS snippet in the daemon")
     pe.add_argument("script")
@@ -178,6 +229,8 @@ def main():
         return emit(cmd_status(args.timeout), args.raw)
     if args.cmd == "start":
         return emit(cmd_start(args.timeout), args.raw)
+    if args.cmd == "kill-orphans":
+        return emit(cmd_kill_orphans(args.dry_run), args.raw)
     if args.cmd == "exec":
         body = target_body(args)
         body.update({"script": args.script, "edt": args.edt})
