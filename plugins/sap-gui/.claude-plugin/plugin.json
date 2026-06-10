@@ -1,7 +1,7 @@
 {
   "name": "sap-gui",
   "description": "SAP GUI for Java (macOS) 백그라운드 자동제어. 'sap 창 보여줘', 'MM03 열어줘', '이 화면 캡처해서 정리해줘' 같은 자연어로 SAP 트랜잭션을 조작·판독·캡처한다. 여러 창 멀티타겟 제어 지원.",
-  "version": "1.1.0",
+  "version": "2.0.0",
   "author": {
     "name": "dancingbbee"
   }
